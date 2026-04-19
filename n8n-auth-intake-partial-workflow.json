@@ -1,0 +1,150 @@
+{
+  "name": "Multi-Intent AI Assistant - Partial (Welcome + Authentication)",
+  "nodes": [
+    {
+      "parameters": {
+        "public": true,
+        "mode": "hostedChat",
+        "initialMessages": "Hi, please share your user ID and 4-digit PIN to continue.",
+        "options": {
+          "responseMode": "lastNode",
+          "title": "AI Workflow Agent",
+          "subtitle": "Authentication required before we continue.",
+          "inputPlaceholder": "Enter your user ID and 4-digit PIN"
+        }
+      },
+      "id": "1",
+      "name": "Chat Trigger",
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        260,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\nconst sessions = staticData.multiIntentAssistantSessions ?? (staticData.multiIntentAssistantSessions = {});\n\nconst incoming = items[0]?.json ?? {};\nconst sessionId = String(\n  incoming.sessionId ??\n  incoming.chatSessionId ??\n  incoming.session_id ??\n  incoming.userId ??\n  'default-session'\n);\nconst chatInput = String(\n  incoming.chatInput ??\n  incoming.text ??\n  incoming.message ??\n  ''\n).trim();\n\nconst existingSession = sessions[sessionId] ?? {\n  phase: 'welcome',\n  authenticated: false,\n  authAttempts: 0,\n  userId: null,\n  name: null\n};\n\nconst mockUsers = {\n  '5673': { name: 'Devin', pin: '1234' },\n  '2468': { name: 'Ava', pin: '4321' },\n  '1357': { name: 'Sam', pin: '2468' }\n};\n\nconst hasId = /\\b(?:user\\s*id|id)\\D*(\\d{3,})\\b/i.test(chatInput);\nconst hasPin = /\\bpin\\D*(\\d{4})\\b/i.test(chatInput);\nconst looksLikeCredentials = hasId && hasPin;\n\nreturn [\n  {\n    json: {\n      ...incoming,\n      sessionId,\n      chatInput,\n      session: existingSession,\n      looksLikeCredentials,\n      mockUsers,\n      text: incoming.text ?? ''\n    }\n  }\n];"
+      },
+      "id": "2",
+      "name": "Load Session State",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        520,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\nconst sessions = staticData.multiIntentAssistantSessions ?? (staticData.multiIntentAssistantSessions = {});\n\nconst data = items[0].json;\nconst { sessionId, session, looksLikeCredentials, chatInput } = data;\n\nif (session.authenticated) {\n  return [\n    {\n      json: {\n        ...data,\n        skipAuth: true,\n        text: `Hi ${session.name}, authentication is already complete. This partial workflow stops after the user variables are saved.`\n      }\n    }\n  ];\n}\n\nif (session.phase === 'welcome' && !looksLikeCredentials) {\n  sessions[sessionId] = {\n    ...session,\n    phase: 'awaiting_auth'\n  };\n\n  return [\n    {\n      json: {\n        ...data,\n        skipAuth: true,\n        text: 'Hi, please share your user ID and 4-digit PIN to continue.'\n      }\n    }\n  ];\n}\n\nreturn [\n  {\n    json: {\n      ...data,\n      skipAuth: false,\n      text: chatInput ? data.text : 'Hi, please share your user ID and 4-digit PIN to continue.'\n    }\n  }\n];"
+      },
+      "id": "3",
+      "name": "Welcome Agent",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        780,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\nconst sessions = staticData.multiIntentAssistantSessions ?? (staticData.multiIntentAssistantSessions = {});\n\nconst data = items[0].json;\nconst { sessionId, session, chatInput, mockUsers, skipAuth } = data;\n\nif (skipAuth) {\n  return [{ json: { ...data, authValidated: false, shouldSaveUser: false } }];\n}\n\nconst idMatch = chatInput.match(/\\b(?:user\\s*id|id)\\D*(\\d{3,})\\b/i);\nconst pinMatch = chatInput.match(/\\bpin\\D*(\\d{4})\\b/i);\n\nif (!idMatch || !pinMatch) {\n  sessions[sessionId] = {\n    ...session,\n    phase: 'awaiting_auth',\n    authAttempts: session.authAttempts ?? 0\n  };\n\n  return [\n    {\n      json: {\n        ...data,\n        authValidated: false,\n        shouldSaveUser: false,\n        text: 'Please send both your user ID and a 4-digit PIN in one message. Example: user id 5673 and pin 1234.'\n      }\n    }\n  ];\n}\n\nconst userId = idMatch[1];\nconst pin = pinMatch[1];\nconst user = mockUsers[userId];\nconst isValid = Boolean(user && user.pin === pin);\n\nif (!isValid) {\n  const nextAttempts = (session.authAttempts ?? 0) + 1;\n  sessions[sessionId] = {\n    ...session,\n    phase: 'awaiting_auth',\n    authAttempts: nextAttempts\n  };\n\n  return [\n    {\n      json: {\n        ...data,\n        authValidated: false,\n        shouldSaveUser: false,\n        attemptedUserId: userId,\n        text: 'Authentication failed. Please re-enter your user ID and 4-digit PIN.'\n      }\n    }\n  ];\n}\n\nreturn [\n  {\n    json: {\n      ...data,\n      authValidated: true,\n      shouldSaveUser: true,\n      authenticatedUserId: userId,\n      authenticatedName: user.name,\n      text: 'Authentication successful.'\n    }\n  }\n];"
+      },
+      "id": "4",
+      "name": "Authentication Agent",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1050,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\nconst sessions = staticData.multiIntentAssistantSessions ?? (staticData.multiIntentAssistantSessions = {});\n\nconst data = items[0].json;\nconst { sessionId, session, shouldSaveUser, authenticatedUserId, authenticatedName, skipAuth } = data;\n\nif (skipAuth || !shouldSaveUser) {\n  return [{ json: data }];\n}\n\nsessions[sessionId] = {\n  ...session,\n  phase: 'intent_capture',\n  authenticated: true,\n  authAttempts: 0,\n  userId: authenticatedUserId,\n  name: authenticatedName\n};\n\nreturn [\n  {\n    json: {\n      ...data,\n      savedUser: {\n        userId: authenticatedUserId,\n        name: authenticatedName\n      },\n      text: `Hi ${authenticatedName}, how can I help you today?`\n    }\n  }\n];"
+      },
+      "id": "5",
+      "name": "Save User Variables",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "content": "Scope implemented here: Welcome, Authentication, and Save Variable(s) for User ID + Name.\\n\\nNext stage to add later: Intent Capture & Confirmation.",
+        "height": 240,
+        "width": 340,
+        "color": 5
+      },
+      "id": "6",
+      "name": "Partial Scope Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1240,
+        120
+      ]
+    }
+  ],
+  "connections": {
+    "Chat Trigger": {
+      "main": [
+        [
+          {
+            "node": "Load Session State",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Session State": {
+      "main": [
+        [
+          {
+            "node": "Welcome Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Welcome Agent": {
+      "main": [
+        [
+          {
+            "node": "Authentication Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Authentication Agent": {
+      "main": [
+        [
+          {
+            "node": "Save User Variables",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "partial-auth-v1",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": []
+}
