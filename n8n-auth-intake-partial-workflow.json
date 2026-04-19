@@ -1,5 +1,5 @@
 {
-  "name": "Multi-Intent AI Assistant - Partial (Welcome + Authentication)",
+  "name": "Multi-Intent AI Assistant - Partial (Through Save Intents)",
   "nodes": [
     {
       "parameters": {
@@ -9,8 +9,8 @@
         "options": {
           "responseMode": "lastNode",
           "title": "AI Workflow Agent",
-          "subtitle": "Authentication required before we continue.",
-          "inputPlaceholder": "Enter your user ID and 4-digit PIN"
+          "subtitle": "Authentication and intent intake",
+          "inputPlaceholder": "Enter your message"
         }
       },
       "id": "1",
@@ -19,12 +19,12 @@
       "typeVersion": 1.1,
       "position": [
         260,
-        300
+        360
       ]
     },
     {
       "parameters": {
-        "jsCode": "const staticData = $getWorkflowStaticData('global');\nconst sessions = staticData.multiIntentAssistantSessions ?? (staticData.multiIntentAssistantSessions = {});\n\nconst incoming = items[0]?.json ?? {};\nconst sessionId = String(\n  incoming.sessionId ??\n  incoming.chatSessionId ??\n  incoming.session_id ??\n  incoming.userId ??\n  'default-session'\n);\nconst chatInput = String(\n  incoming.chatInput ??\n  incoming.text ??\n  incoming.message ??\n  ''\n).trim();\n\nconst existingSession = sessions[sessionId] ?? {\n  phase: 'welcome',\n  authenticated: false,\n  authAttempts: 0,\n  userId: null,\n  name: null\n};\n\nconst mockUsers = {\n  '5673': { name: 'Devin', pin: '1234' },\n  '2468': { name: 'Ava', pin: '4321' },\n  '1357': { name: 'Sam', pin: '2468' }\n};\n\nconst hasId = /\\b(?:user\\s*id|id)\\D*(\\d{3,})\\b/i.test(chatInput);\nconst hasPin = /\\bpin\\D*(\\d{4})\\b/i.test(chatInput);\nconst looksLikeCredentials = hasId && hasPin;\n\nreturn [\n  {\n    json: {\n      ...incoming,\n      sessionId,\n      chatInput,\n      session: existingSession,\n      looksLikeCredentials,\n      mockUsers,\n      text: incoming.text ?? ''\n    }\n  }\n];"
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\nconst sessions = staticData.multiIntentAssistantSessions ?? (staticData.multiIntentAssistantSessions = {});\n\nconst incoming = items[0]?.json ?? {};\nconst sessionId = String(\n  incoming.sessionId ??\n  incoming.chatSessionId ??\n  incoming.session_id ??\n  incoming.userId ??\n  'default-session'\n);\nconst chatInput = String(\n  incoming.chatInput ??\n  incoming.text ??\n  incoming.message ??\n  ''\n).trim();\n\nconst existingSession = sessions[sessionId] ?? {\n  phase: 'welcome',\n  authenticated: false,\n  authAttempts: 0,\n  userId: null,\n  name: null,\n  pendingIntents: [],\n  intents: []\n};\n\nconst mockUsers = {\n  '5673': { name: 'Devin', pin: '1234' },\n  '2468': { name: 'Ava', pin: '4321' },\n  '1357': { name: 'Sam', pin: '2468' }\n};\n\nconst hasId = /\\b(?:user\\s*id|id)\\D*(\\d{3,})\\b/i.test(chatInput);\nconst hasPin = /\\bpin\\D*(\\d{4})\\b/i.test(chatInput);\nconst looksLikeCredentials = hasId && hasPin;\n\nreturn [\n  {\n    json: {\n      ...incoming,\n      sessionId,\n      chatInput,\n      session: existingSession,\n      looksLikeCredentials,\n      mockUsers,\n      text: incoming.text ?? ''\n    }\n  }\n];"
       },
       "id": "2",
       "name": "Load Session State",
@@ -32,12 +32,12 @@
       "typeVersion": 2,
       "position": [
         520,
-        300
+        360
       ]
     },
     {
       "parameters": {
-        "jsCode": "const staticData = $getWorkflowStaticData('global');\nconst sessions = staticData.multiIntentAssistantSessions ?? (staticData.multiIntentAssistantSessions = {});\n\nconst data = items[0].json;\nconst { sessionId, session, looksLikeCredentials, chatInput } = data;\n\nif (session.authenticated) {\n  return [\n    {\n      json: {\n        ...data,\n        skipAuth: true,\n        text: `Hi ${session.name}, authentication is already complete. This partial workflow stops after the user variables are saved.`\n      }\n    }\n  ];\n}\n\nif (session.phase === 'welcome' && !looksLikeCredentials) {\n  sessions[sessionId] = {\n    ...session,\n    phase: 'awaiting_auth'\n  };\n\n  return [\n    {\n      json: {\n        ...data,\n        skipAuth: true,\n        text: 'Hi, please share your user ID and 4-digit PIN to continue.'\n      }\n    }\n  ];\n}\n\nreturn [\n  {\n    json: {\n      ...data,\n      skipAuth: false,\n      text: chatInput ? data.text : 'Hi, please share your user ID and 4-digit PIN to continue.'\n    }\n  }\n];"
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\nconst sessions = staticData.multiIntentAssistantSessions ?? (staticData.multiIntentAssistantSessions = {});\n\nconst data = items[0].json;\nconst { sessionId, session, looksLikeCredentials, chatInput } = data;\n\nif (session.authenticated) {\n  return [\n    {\n      json: {\n        ...data,\n        skipAuth: true,\n        text: data.text ?? ''\n      }\n    }\n  ];\n}\n\nif (session.phase === 'welcome' && !looksLikeCredentials) {\n  const updatedSession = {\n    ...session,\n    phase: 'awaiting_auth'\n  };\n  sessions[sessionId] = updatedSession;\n\n  return [\n    {\n      json: {\n        ...data,\n        session: updatedSession,\n        skipAuth: true,\n        text: 'Hi, please share your user ID and 4-digit PIN to continue.'\n      }\n    }\n  ];\n}\n\nreturn [\n  {\n    json: {\n      ...data,\n      skipAuth: false,\n      text: chatInput ? data.text : 'Hi, please share your user ID and 4-digit PIN to continue.'\n    }\n  }\n];"
       },
       "id": "3",
       "name": "Welcome Agent",
@@ -45,48 +45,113 @@
       "typeVersion": 2,
       "position": [
         780,
-        300
+        360
       ]
     },
     {
       "parameters": {
-        "jsCode": "const staticData = $getWorkflowStaticData('global');\nconst sessions = staticData.multiIntentAssistantSessions ?? (staticData.multiIntentAssistantSessions = {});\n\nconst data = items[0].json;\nconst { sessionId, session, chatInput, mockUsers, skipAuth } = data;\n\nif (skipAuth) {\n  return [{ json: { ...data, authValidated: false, shouldSaveUser: false } }];\n}\n\nconst idMatch = chatInput.match(/\\b(?:user\\s*id|id)\\D*(\\d{3,})\\b/i);\nconst pinMatch = chatInput.match(/\\bpin\\D*(\\d{4})\\b/i);\n\nif (!idMatch || !pinMatch) {\n  sessions[sessionId] = {\n    ...session,\n    phase: 'awaiting_auth',\n    authAttempts: session.authAttempts ?? 0\n  };\n\n  return [\n    {\n      json: {\n        ...data,\n        authValidated: false,\n        shouldSaveUser: false,\n        text: 'Please send both your user ID and a 4-digit PIN in one message. Example: user id 5673 and pin 1234.'\n      }\n    }\n  ];\n}\n\nconst userId = idMatch[1];\nconst pin = pinMatch[1];\nconst user = mockUsers[userId];\nconst isValid = Boolean(user && user.pin === pin);\n\nif (!isValid) {\n  const nextAttempts = (session.authAttempts ?? 0) + 1;\n  sessions[sessionId] = {\n    ...session,\n    phase: 'awaiting_auth',\n    authAttempts: nextAttempts\n  };\n\n  return [\n    {\n      json: {\n        ...data,\n        authValidated: false,\n        shouldSaveUser: false,\n        attemptedUserId: userId,\n        text: 'Authentication failed. Please re-enter your user ID and 4-digit PIN.'\n      }\n    }\n  ];\n}\n\nreturn [\n  {\n    json: {\n      ...data,\n      authValidated: true,\n      shouldSaveUser: true,\n      authenticatedUserId: userId,\n      authenticatedName: user.name,\n      text: 'Authentication successful.'\n    }\n  }\n];"
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\nconst sessions = staticData.multiIntentAssistantSessions ?? (staticData.multiIntentAssistantSessions = {});\n\nconst data = items[0].json;\nconst { sessionId, session, chatInput, mockUsers, skipAuth } = data;\n\nif (skipAuth) {\n  return [{ json: { ...data, authValidated: false, shouldSaveUser: false } }];\n}\n\nconst idMatch = chatInput.match(/\\b(?:user\\s*id|id)\\D*(\\d{3,})\\b/i);\nconst pinMatch = chatInput.match(/\\bpin\\D*(\\d{4})\\b/i);\n\nif (!idMatch || !pinMatch) {\n  const updatedSession = {\n    ...session,\n    phase: 'awaiting_auth',\n    authAttempts: session.authAttempts ?? 0\n  };\n  sessions[sessionId] = updatedSession;\n\n  return [\n    {\n      json: {\n        ...data,\n        session: updatedSession,\n        authValidated: false,\n        shouldSaveUser: false,\n        text: 'Please send both your user ID and a 4-digit PIN in one message. Example: user id 5673 and pin 1234.'\n      }\n    }\n  ];\n}\n\nconst userId = idMatch[1];\nconst pin = pinMatch[1];\nconst user = mockUsers[userId];\nconst isValid = Boolean(user && user.pin === pin);\n\nif (!isValid) {\n  const updatedSession = {\n    ...session,\n    phase: 'awaiting_auth',\n    authAttempts: (session.authAttempts ?? 0) + 1\n  };\n  sessions[sessionId] = updatedSession;\n\n  return [\n    {\n      json: {\n        ...data,\n        session: updatedSession,\n        authValidated: false,\n        shouldSaveUser: false,\n        attemptedUserId: userId,\n        text: 'Authentication failed. Please re-enter your user ID and 4-digit PIN.'\n      }\n    }\n  ];\n}\n\nreturn [\n  {\n    json: {\n      ...data,\n      authValidated: true,\n      shouldSaveUser: true,\n      authenticatedUserId: userId,\n      authenticatedName: user.name,\n      text: 'Authentication successful.'\n    }\n  }\n];"
       },
       "id": "4",
       "name": "Authentication Agent",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1050,
-        300
+        1040,
+        360
       ]
     },
     {
       "parameters": {
-        "jsCode": "const staticData = $getWorkflowStaticData('global');\nconst sessions = staticData.multiIntentAssistantSessions ?? (staticData.multiIntentAssistantSessions = {});\n\nconst data = items[0].json;\nconst { sessionId, session, shouldSaveUser, authenticatedUserId, authenticatedName, skipAuth } = data;\n\nif (skipAuth || !shouldSaveUser) {\n  return [{ json: data }];\n}\n\nsessions[sessionId] = {\n  ...session,\n  phase: 'intent_capture',\n  authenticated: true,\n  authAttempts: 0,\n  userId: authenticatedUserId,\n  name: authenticatedName\n};\n\nreturn [\n  {\n    json: {\n      ...data,\n      savedUser: {\n        userId: authenticatedUserId,\n        name: authenticatedName\n      },\n      text: `Hi ${authenticatedName}, how can I help you today?`\n    }\n  }\n];"
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\nconst sessions = staticData.multiIntentAssistantSessions ?? (staticData.multiIntentAssistantSessions = {});\n\nconst data = items[0].json;\nconst { sessionId, session, shouldSaveUser, authenticatedUserId, authenticatedName, skipAuth } = data;\n\nif (skipAuth || !shouldSaveUser) {\n  return [{ json: data }];\n}\n\nconst updatedSession = {\n  ...session,\n  phase: 'intent_capture',\n  authenticated: true,\n  authAttempts: 0,\n  userId: authenticatedUserId,\n  name: authenticatedName,\n  pendingIntents: session.pendingIntents ?? [],\n  intents: session.intents ?? []\n};\n\nsessions[sessionId] = updatedSession;\n\nreturn [\n  {\n    json: {\n      ...data,\n      session: updatedSession,\n      sessionState: {\n        phase: updatedSession.phase,\n        authenticated: updatedSession.authenticated,\n        authAttempts: updatedSession.authAttempts,\n        userId: updatedSession.userId,\n        name: updatedSession.name\n      },\n      savedUser: {\n        userId: authenticatedUserId,\n        name: authenticatedName\n      },\n      text: `Hi ${authenticatedName}, how can I help you today?`\n    }\n  }\n];"
       },
       "id": "5",
       "name": "Save User Variables",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1320,
-        300
+        1300,
+        360
       ]
     },
     {
       "parameters": {
-        "content": "Scope implemented here: Welcome, Authentication, and Save Variable(s) for User ID + Name.\\n\\nNext stage to add later: Intent Capture & Confirmation.",
-        "height": 240,
-        "width": 340,
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\nconst sessions = staticData.multiIntentAssistantSessions ?? (staticData.multiIntentAssistantSessions = {});\n\nconst data = items[0].json;\nconst currentSession = sessions[data.sessionId] ?? data.session;\n\nfunction parseIntents(message) {\n  const text = String(message ?? '').trim();\n  if (!text) return [];\n\n  const lowered = text.toLowerCase();\n  const intents = [];\n\n  const currencyMatch = lowered.match(/\\b(?:usd|eur|gbp|inr|aud|cad|jpy|aed|chf|sgd)\\b.*\\b(?:to|in)\\b.*\\b(?:usd|eur|gbp|inr|aud|cad|jpy|aed|chf|sgd)\\b|\\b(?:convert|conversion|exchange rate|currency|rate)\\b/);\n  if (currencyMatch) {\n    intents.push({\n      type: 'currency_converter',\n      label: 'currency conversion',\n      request: text,\n      order: currencyMatch.index ?? 0\n    });\n  }\n\n  const explicitDateTimeRequest = /\\b(?:date|time)\\b|\\bwhat(?:'s| is)?\\s+the\\s+(?:date|time)\\b|\\bwhat\\s+day\\b|\\bcoming\\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)\\b|\\bdate\\s+on\\b|\\btime\\s+on\\b|\\b\\d+\\s+(?:hours?|days?|weeks?|months?|years?)\\s+from\\s+now\\b|\\bnow\\b/i;\n  const weakTemporalOnly = /\\b(?:today|tomorrow|yesterday|next\\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)|coming\\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday))\\b/i;\n\n  const shouldAddDateTime = explicitDateTimeRequest.test(text) || (!currencyMatch && weakTemporalOnly.test(text));\n  const datetimeMatch = shouldAddDateTime ? lowered.match(/\\b(?:date|time|today|tomorrow|yesterday|next|coming|monday|tuesday|wednesday|thursday|friday|saturday|sunday|hour|hours|minute|minutes|day|days|week|weeks|month|months|year|years|now)\\b/) : null;\n  if (datetimeMatch) {\n    intents.push({\n      type: 'natural_language_datetime',\n      label: 'natural language date and time',\n      request: text,\n      order: datetimeMatch.index ?? 9999\n    });\n  }\n\n  intents.sort((a, b) => a.order - b.order);\n\n  const seen = new Set();\n  return intents.filter((intent) => {\n    if (seen.has(intent.type)) return false;\n    seen.add(intent.type);\n    return true;\n  }).map(({ order, ...intent }) => intent);\n}\n\nfunction classifyUnsupported(message) {\n  return /\\b(?:weather|joke|email|calendar|alarm|reminder|news|book|flight|hotel|pizza|translate|summary|summarize|stock|music|song|play)\\b/i.test(message);\n}\n\nif (!currentSession.authenticated) {\n  return [{ json: data }];\n}\n\nif (data.shouldSaveUser) {\n  return [{ json: data }];\n}\n\nif (currentSession.phase !== 'intent_capture') {\n  return [{ json: { ...data, session: currentSession } }];\n}\n\nconst chatInput = String(data.chatInput ?? '').trim();\nif (!chatInput) {\n  return [{\n    json: {\n      ...data,\n      session: currentSession,\n      intentDetectionStatus: 'no_intent',\n      detectedIntents: [],\n      text: `Hi ${currentSession.name}, I can help with currency conversion and natural language date or time questions. What would you like to do?`\n    }\n  }];\n}\n\nconst detectedIntents = parseIntents(chatInput);\nif (detectedIntents.length === 0) {\n  const detectionStatus = classifyUnsupported(chatInput) ? 'invalid_intent' : 'no_intent';\n  return [{\n    json: {\n      ...data,\n      session: currentSession,\n      intentDetectionStatus: detectionStatus,\n      detectedIntents: [],\n      text: data.text ?? ''\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    ...data,\n    session: currentSession,\n    intentDetectionStatus: 'valid',\n    detectedIntents,\n    text: data.text ?? ''\n  }\n}];"
+      },
+      "id": "7",
+      "name": "Intent Capture Agent",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1570,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = items[0].json;\nconst session = data.session;\n\nif (!session?.authenticated || data.shouldSaveUser || session.phase !== 'intent_capture') {\n  return [{ json: data }];\n}\n\nif (data.intentDetectionStatus === 'no_intent') {\n  return [{\n    json: {\n      ...data,\n      text: `I can help with currency conversion and natural language date or time questions. Please tell me which of those you need.`\n    }\n  }];\n}\n\nif (data.intentDetectionStatus === 'invalid_intent') {\n  return [{\n    json: {\n      ...data,\n      text: 'I currently support only currency conversion and natural language date or time requests. Please try one of those.'\n    }\n  }];\n}\n\nreturn [{ json: data }];"
+      },
+      "id": "8",
+      "name": "Validate Intent Detection",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1830,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\nconst sessions = staticData.multiIntentAssistantSessions ?? (staticData.multiIntentAssistantSessions = {});\n\nconst data = items[0].json;\nconst currentSession = sessions[data.sessionId] ?? data.session;\n\nfunction summarizeIntents(intents) {\n  if (!Array.isArray(intents) || intents.length === 0) return 'no intents';\n  if (intents.length === 1) return intents[0].request;\n  if (intents.length === 2) return `${intents[0].request} and ${intents[1].request}`;\n  return `${intents.slice(0, -1).map((intent) => intent.request).join(', ')}, and ${intents[intents.length - 1].request}`;\n}\n\nif (!currentSession?.authenticated || data.shouldSaveUser) {\n  return [{ json: data }];\n}\n\nif (currentSession.phase !== 'intent_capture' || data.intentDetectionStatus !== 'valid') {\n  return [{ json: { ...data, session: currentSession } }];\n}\n\nconst updatedSession = {\n  ...currentSession,\n  phase: 'intent_confirmation',\n  pendingIntents: data.detectedIntents\n};\n\nsessions[data.sessionId] = updatedSession;\n\nconst summary = summarizeIntents(updatedSession.pendingIntents);\n\nreturn [{\n  json: {\n    ...data,\n    session: updatedSession,\n    awaitingConfirmation: true,\n    pendingIntents: updatedSession.pendingIntents,\n    text: `Sure, I can help you with ${summary}. Reply with proceed, add another request, or remove one.`\n  }\n}];"
+      },
+      "id": "9",
+      "name": "Summarize And Confirm Intents",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2090,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\nconst sessions = staticData.multiIntentAssistantSessions ?? (staticData.multiIntentAssistantSessions = {});\n\nconst data = items[0].json;\nconst currentSession = sessions[data.sessionId] ?? data.session;\n\nfunction parseIntents(message) {\n  const text = String(message ?? '').trim();\n  if (!text) return [];\n\n  const lowered = text.toLowerCase();\n  const intents = [];\n\n  const currencyMatch = lowered.match(/\\b(?:usd|eur|gbp|inr|aud|cad|jpy|aed|chf|sgd)\\b.*\\b(?:to|in)\\b.*\\b(?:usd|eur|gbp|inr|aud|cad|jpy|aed|chf|sgd)\\b|\\b(?:convert|conversion|exchange rate|currency|rate)\\b/);\n  if (currencyMatch) {\n    intents.push({\n      type: 'currency_converter',\n      label: 'currency conversion',\n      request: text,\n      order: currencyMatch.index ?? 0\n    });\n  }\n\n  const explicitDateTimeRequest = /\\b(?:date|time)\\b|\\bwhat(?:'s| is)?\\s+the\\s+(?:date|time)\\b|\\bwhat\\s+day\\b|\\bcoming\\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)\\b|\\bdate\\s+on\\b|\\btime\\s+on\\b|\\b\\d+\\s+(?:hours?|days?|weeks?|months?|years?)\\s+from\\s+now\\b|\\bnow\\b/i;\n  const weakTemporalOnly = /\\b(?:today|tomorrow|yesterday|next\\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)|coming\\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday))\\b/i;\n\n  const shouldAddDateTime = explicitDateTimeRequest.test(text) || (!currencyMatch && weakTemporalOnly.test(text));\n  const datetimeMatch = shouldAddDateTime ? lowered.match(/\\b(?:date|time|today|tomorrow|yesterday|next|coming|monday|tuesday|wednesday|thursday|friday|saturday|sunday|hour|hours|minute|minutes|day|days|week|weeks|month|months|year|years|now)\\b/) : null;\n  if (datetimeMatch) {\n    intents.push({\n      type: 'natural_language_datetime',\n      label: 'natural language date and time',\n      request: text,\n      order: datetimeMatch.index ?? 9999\n    });\n  }\n\n  intents.sort((a, b) => a.order - b.order);\n\n  const seen = new Set();\n  return intents.filter((intent) => {\n    if (seen.has(intent.type)) return false;\n    seen.add(intent.type);\n    return true;\n  }).map(({ order, ...intent }) => intent);\n}\n\nfunction mergeIntents(existing, additions) {\n  const merged = [...existing];\n  const seen = new Set(existing.map((intent) => intent.type));\n  for (const intent of additions) {\n    if (!seen.has(intent.type)) {\n      merged.push(intent);\n      seen.add(intent.type);\n    }\n  }\n  return merged;\n}\n\nfunction summarizeIntents(intents) {\n  if (!Array.isArray(intents) || intents.length === 0) return 'no intents';\n  if (intents.length === 1) return intents[0].request;\n  if (intents.length === 2) return `${intents[0].request} and ${intents[1].request}`;\n  return `${intents.slice(0, -1).map((intent) => intent.request).join(', ')}, and ${intents[intents.length - 1].request}`;\n}\n\nif (!currentSession?.authenticated || currentSession.phase !== 'intent_confirmation') {\n  return [{ json: { ...data, session: currentSession } }];\n}\n\nif (data.awaitingConfirmation) {\n  return [{ json: { ...data, session: currentSession } }];\n}\n\nconst input = String(data.chatInput ?? '').trim();\nconst lowered = input.toLowerCase();\nconst pendingIntents = Array.isArray(currentSession.pendingIntents) ? currentSession.pendingIntents : [];\n\nconst proceedIntent = /\\b(?:proceed|confirm|confirmed|yes|yes proceed|looks good|that works|done)\\b/i.test(input) || /\\b(?:no,? that'?s it|that's it|that is it|nothing else|no more)\\b/i.test(input);\nif (proceedIntent) {\n  return [{\n    json: {\n      ...data,\n      session: currentSession,\n      shouldSaveIntents: true,\n      pendingIntents,\n      text: `Thanks. I am saving ${summarizeIntents(pendingIntents)} for processing.`\n    }\n  }];\n}\n\nconst removeCurrency = /\\bremove\\b.*\\bcurrency\\b|\\bwithout\\b.*\\bcurrency\\b|\\bdon'?t\\b.*\\bcurrency\\b/i.test(input);\nconst removeDatetime = /\\bremove\\b.*\\b(?:date|time)\\b|\\bwithout\\b.*\\b(?:date|time)\\b|\\bdon'?t\\b.*\\b(?:date|time)\\b/i.test(input);\nif (removeCurrency || removeDatetime) {\n  const filtered = pendingIntents.filter((intent) => {\n    if (removeCurrency && intent.type === 'currency_converter') return false;\n    if (removeDatetime && intent.type === 'natural_language_datetime') return false;\n    return true;\n  });\n\n  if (filtered.length === 0) {\n    const updatedSession = {\n      ...currentSession,\n      phase: 'intent_capture',\n      pendingIntents: []\n    };\n    sessions[data.sessionId] = updatedSession;\n\n    return [{\n      json: {\n        ...data,\n        session: updatedSession,\n        shouldSaveIntents: false,\n        pendingIntents: [],\n        text: 'All pending intents were removed. Please share a currency conversion or natural language date or time request.'\n      }\n    }];\n  }\n\n  const updatedSession = {\n    ...currentSession,\n    pendingIntents: filtered\n  };\n  sessions[data.sessionId] = updatedSession;\n\n  return [{\n    json: {\n      ...data,\n      session: updatedSession,\n      shouldSaveIntents: false,\n      pendingIntents: filtered,\n      text: `Updated intents: ${summarizeIntents(filtered)}. Reply with proceed, add another request, or remove one.`\n    }\n  }];\n}\n\nconst additionalIntents = parseIntents(input);\nif (additionalIntents.length > 0) {\n  const merged = mergeIntents(pendingIntents, additionalIntents);\n  const updatedSession = {\n    ...currentSession,\n    pendingIntents: merged\n  };\n  sessions[data.sessionId] = updatedSession;\n\n  return [{\n    json: {\n      ...data,\n      session: updatedSession,\n      shouldSaveIntents: false,\n      pendingIntents: merged,\n      text: `Updated intents: ${summarizeIntents(merged)}. Reply with proceed, add another request, or remove one.`\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    ...data,\n    session: currentSession,\n    shouldSaveIntents: false,\n    pendingIntents,\n    text: 'Please reply with proceed, add another supported request, or remove one of the current intents.'\n  }\n}];"
+      },
+      "id": "10",
+      "name": "Confirmation Agent",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2350,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\nconst sessions = staticData.multiIntentAssistantSessions ?? (staticData.multiIntentAssistantSessions = {});\n\nconst data = items[0].json;\nconst currentSession = sessions[data.sessionId] ?? data.session;\n\nfunction summarizeIntents(intents) {\n  if (!Array.isArray(intents) || intents.length === 0) return 'no intents';\n  if (intents.length === 1) return intents[0].request;\n  if (intents.length === 2) return `${intents[0].request} and ${intents[1].request}`;\n  return `${intents.slice(0, -1).map((intent) => intent.request).join(', ')}, and ${intents[intents.length - 1].request}`;\n}\n\nif (!data.shouldSaveIntents) {\n  return [{ json: { ...data, session: currentSession } }];\n}\n\nconst intentsToSave = Array.isArray(currentSession.pendingIntents) ? currentSession.pendingIntents : (Array.isArray(data.pendingIntents) ? data.pendingIntents : []);\nconst updatedSession = {\n  ...currentSession,\n  phase: 'intent_handler',\n  intents: intentsToSave,\n  pendingIntents: []\n};\n\nsessions[data.sessionId] = updatedSession;\n\nreturn [{\n  json: {\n    ...data,\n    session: updatedSession,\n    sessionState: {\n      phase: updatedSession.phase,\n      authenticated: updatedSession.authenticated,\n      authAttempts: updatedSession.authAttempts,\n      userId: updatedSession.userId,\n      name: updatedSession.name\n    },\n    savedIntents: intentsToSave,\n    text: `Saved intents: ${summarizeIntents(intentsToSave)}. The workflow is ready for the intent handler step.`\n  }\n}];"
+      },
+      "id": "11",
+      "name": "Save Intent Variables",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2610,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "content": "Scope implemented here: Welcome, Authentication, Intent Capture & Confirmation, and Save Variable(s) for Intents[].\\n\\nNext stage to add later: Intent Handler and processors.",
+        "height": 260,
+        "width": 380,
         "color": 5
       },
-      "id": "6",
-      "name": "Partial Scope Note",
+      "id": "12",
+      "name": "Scope Note",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        1240,
+        2460,
         120
       ]
     }
@@ -135,6 +200,61 @@
           }
         ]
       ]
+    },
+    "Save User Variables": {
+      "main": [
+        [
+          {
+            "node": "Intent Capture Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Intent Capture Agent": {
+      "main": [
+        [
+          {
+            "node": "Validate Intent Detection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Intent Detection": {
+      "main": [
+        [
+          {
+            "node": "Summarize And Confirm Intents",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Summarize And Confirm Intents": {
+      "main": [
+        [
+          {
+            "node": "Confirmation Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confirmation Agent": {
+      "main": [
+        [
+          {
+            "node": "Save Intent Variables",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "pinData": {},
@@ -142,7 +262,7 @@
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "partial-auth-v1",
+  "versionId": "partial-intake-v2",
   "meta": {
     "templateCredsSetupCompleted": true
   },
