@@ -12,6 +12,18 @@ This eval set now covers the workflow through:
 - Answer Intent state
 - Call Wrap-up
 
+   - Save `intents[]` on chat turns.
+
+## Mock User Credentials
+
+Use the following credentials for the authentication steps in the evaluations below:
+
+| User ID | PIN | Name |
+| :--- | :--- | :--- |
+| **1357** | **2468** | Sam |
+| **2468** | **4321** | Ava |
+| **5673** | **1234** | Devin |
+
 ## 1. Setup before running evals
 
 1. Import [n8n-auth-intake-partial-workflow.json](/Users/prateekrastogi/Downloads/truesparrow/multi-intent-ai-assistant/n8n-auth-intake-partial-workflow.json).
