@@ -1,44 +1,38 @@
-# Evals for Partial Workflow Through Save Intents
+# Evals Through Call Wrap-Up
 
-This eval set is scoped to the workflow slice that is implemented now:
+This eval set now covers the workflow through:
 
 - Welcome
-- Authentication with mock user data
-- Save `userId` and `name`
+- Authentication
 - Intent Capture and Confirmation
 - Save `intents[]`
-
-The remaining stages from the document are still deferred:
-
 - Intent Handler
-- Intent Processors
+- Currency Converter agent
+- Natural language date and time agent
+- Answer Intent state
 - Call Wrap-up
 
-## 1. Import and setup
+## 1. Setup before running evals
 
 1. Import [n8n-auth-intake-partial-workflow.json](/Users/prateekrastogi/Downloads/truesparrow/multi-intent-ai-assistant/n8n-auth-intake-partial-workflow.json).
-2. Open `Chat Trigger`.
-3. Keep `Response Mode` set to `When Last Node Finishes`.
-4. Use the hosted chat URL if you want to see the configured initial message.
+2. Open both `Currency GPT 4.1` and `DateTime GPT 4.1`.
+3. Attach your existing OpenAI credential to both nodes.
+4. Keep `Chat Trigger` in hosted chat mode with `When Last Node Finishes`.
 
-## 2. Mock users included in the workflow
+## 2. What to inspect in executions
 
-- `5673` / `1234` -> `Devin`
-- `2468` / `4321` -> `Ava`
-- `1357` / `2468` -> `Sam`
+- `Save User Variables` should move the session to `intent_capture`.
+- `Save Intent Variables` should move the session to `intent_handler`.
+- `Intent Handler` should emit only one item: the next queued intent.
+- `Currency Converter Agent` should only receive currency intents.
+- `DateTime Agent` should only receive date or time intents.
+- `Answer Intent State` should emit one item per answered intent in saved order.
+- `Finalize Intent Batch` should return one answer from the last node.
+- If intents remain, final session phase should stay `intent_handler`.
+- If no intents remain, final session phase should move to `call_wrapup` and ask whether the user needs anything else.
+- `Call Wrap-Up Agent` should end cleanly on no, or capture/confirm new valid requests on yes.
 
-## 3. What to verify after each run
-
-Check the last node output and the relevant intermediate nodes:
-
-- `Save User Variables` shows `sessionState.phase = intent_capture` after successful authentication.
-- `Summarize And Confirm Intents` returns a concise confirmation summary for valid detected intents.
-- `Confirmation Agent` supports `proceed`, add, and remove flows.
-- `Save Intent Variables` shows `savedIntents` and `sessionState.phase = intent_handler` after confirmation.
-- Replies never expose the raw PIN.
-- Duplicate intents are not saved twice.
-
-## 4. Mandatory eval coverage for the current scope
+## 3. Mandatory evals
 
 ### Eval A: Happy Flow (Single Intent)
 
@@ -48,18 +42,20 @@ User messages:
 user id 5673 and pin 1234
 What is the date tomorrow?
 proceed
+no
 ```
 
 Expected:
 
-- Auth response is `Hi Devin, how can I help you today?`
-- Intent summary confirms one date or time intent.
-- `Save Intent Variables` stores one intent of type `natural_language_datetime`.
-- Final phase becomes `intent_handler`.
+- The workflow captures one `natural_language_datetime` intent.
+- `Intent Handler` emits one item.
+- The final chat response contains that one date answer.
+- `Finalize Intent Batch` sets `sessionState.phase = call_wrapup` and asks whether the user needs anything else.
+- The final `no` response sets `sessionState.phase = ended` and returns a clean goodbye.
 
-### Eval B: Sequential Processing (Multi-Intent Intake)
+### Eval B: Sequential Processing (Multi-Intent)
 
-This mirrors the sample conversation in the document up to the save step.
+This follows the sample conversation in the document up to the implemented scope.
 
 User messages:
 
@@ -67,15 +63,23 @@ User messages:
 user id 5673 and pin 1234
 I need to know the USD to INR conversion for yesterday and the date on the coming Sunday.
 No, that's it for now.
+next
+no
 ```
 
 Expected:
 
-- The summary mentions both requests in the same order as the user asked them.
-- `savedIntents` contains exactly two intents.
-- The first intent type is `currency_converter`.
-- The second intent type is `natural_language_datetime`.
-- Final phase becomes `intent_handler`.
+- Two intents are saved in the same order:
+  - `currency_converter`
+  - `natural_language_datetime`
+- After confirmation, `Intent Handler` emits only the first intent.
+- The first response is the currency result and includes a prompt to reply `next`.
+- Regression check: the first response must preserve queue context even if `Currency Converter Agent` returns only the model output.
+- The first response must only answer the currency intent. It must not answer the coming-Sunday date/time intent or mention unrelated June 2024 dates.
+- After `next`, `Intent Handler` emits only the second intent.
+- The second response is the date/time result for the coming Sunday relative to the current run date. For example, when run on 20 April 2026, this should resolve to 26 April 2026.
+- Session moves to `call_wrapup` only after the second intent is answered and asks whether the user needs anything else.
+- The final `no` response ends the chat cleanly.
 
 ### Eval C: Follow-up Intents
 
@@ -86,14 +90,18 @@ user id 2468 and pin 4321
 I need the USD to INR conversion for yesterday.
 add the date on the coming Sunday too
 proceed
+next
+no
 ```
 
 Expected:
 
-- First summary contains only the currency conversion intent.
-- After the add message, the confirmation summary contains both intents.
-- `savedIntents` contains two unique intents.
-- No duplicate currency intent is introduced.
+- First confirmation shows only the currency intent.
+- After the add request, two intents are pending.
+- `proceed` processes and returns only the currency result first.
+- `next` processes and returns the date result second.
+- After both answers, wrap-up asks whether the user needs anything else.
+- `no` ends the chat cleanly.
 
 ### Eval D: Authentication Failure
 
@@ -106,9 +114,9 @@ user id 5673 and pin 1234
 
 Expected:
 
-- Failed login returns a generic auth failure response.
-- No user variables are saved on the failed attempt.
-- The retry succeeds and moves the session to `intent_capture`.
+- Failed auth never saves user variables.
+- Retry succeeds and moves the session to `intent_capture`.
+- No PIN appears in any reply.
 
 ### Eval E: No Intent Detected
 
@@ -121,9 +129,9 @@ Can you help me?
 
 Expected:
 
-- The workflow does not save intents.
-- It re-prompts with the supported capabilities.
-- `intentDetectionStatus` is `no_intent`.
+- No intents are saved.
+- The workflow re-prompts with supported capabilities.
+- `intentDetectionStatus = no_intent`.
 
 ### Eval F: Invalid Intent
 
@@ -136,9 +144,9 @@ Can you tell me the weather in Mumbai?
 
 Expected:
 
-- The workflow does not save intents.
-- It explains that only currency conversion and natural language date or time are supported.
-- `intentDetectionStatus` is `invalid_intent`.
+- No intents are saved.
+- The workflow rejects the request as unsupported.
+- `intentDetectionStatus = invalid_intent`.
 
 ### Eval G: Intent Modification
 
@@ -149,17 +157,40 @@ user id 1357 and pin 2468
 I need the USD to INR conversion for yesterday and the date on the coming Sunday.
 remove currency conversion
 proceed
+no
 ```
 
 Expected:
 
-- The first summary contains two intents.
-- After removal, the updated summary contains only the date or time intent.
-- `savedIntents` contains exactly one intent of type `natural_language_datetime`.
+- The pending list shrinks from two intents to one.
+- Only the date/time agent runs after `proceed`.
+- The final chat response contains only the date/time result.
+- Wrap-up asks whether the user needs anything else, then `no` ends the chat cleanly.
 
-## 5. Additional edge checks
+### Eval H: Call Wrap-Up Adds New Intent
 
-### Eval H: Duplicate Intent Prevention
+User messages:
+
+```text
+user id 5673 and pin 1234
+What is the date tomorrow?
+proceed
+yes, convert USD to INR for today
+proceed
+no
+```
+
+Expected:
+
+- The first request is answered, then `Finalize Intent Batch` moves the session to `call_wrapup`.
+- The wrap-up `yes` message with a valid request creates a new `currency_converter` pending intent.
+- The workflow asks for confirmation of the new request before processing it.
+- The second `proceed` processes the new currency intent.
+- The final `no` response sets `sessionState.phase = ended`.
+
+## 4. Additional processor checks
+
+### Eval I: Duplicate Intent Prevention
 
 User messages:
 
@@ -171,40 +202,55 @@ proceed
 
 Expected:
 
-- The summary includes only one currency conversion intent.
-- `savedIntents` contains exactly one `currency_converter` intent.
+- Only one `currency_converter` intent is saved.
+- `Intent Handler` emits one item.
+- The final chat response contains one currency answer.
 
-### Eval I: Remove All Intents
+### Eval J: Currency API Failure Handling
+
+Temporarily break the currency tool URL or force an invalid currency code.
 
 User messages:
 
 ```text
 user id 5673 and pin 1234
-What is the date tomorrow?
-remove date
+Convert ABC to INR for yesterday.
+proceed
 ```
 
 Expected:
 
-- Pending intents become empty.
-- The workflow moves back to `intent_capture`.
-- The response asks the user to share a supported request again.
+- The currency branch fails gracefully.
+- The agent response stays concise.
+- The workflow does not crash the whole execution.
 
-## 6. Minimum scorecard for this milestone
+### Eval K: DateTime Tool Handling
 
-- `Auth works` -> Pass if valid credentials move the session to `intent_capture`.
-- `No PIN leakage` -> Pass if no response contains the raw PIN.
-- `No intent re-prompt works` -> Pass if generic requests are redirected to supported capabilities.
-- `Invalid intent handling works` -> Pass if unsupported requests are rejected cleanly.
-- `Multi-intent capture works` -> Pass if the workflow stores both supported intents from one message.
-- `Intent modification works` -> Pass if add and remove update the pending list correctly.
-- `Save intents works` -> Pass if `savedIntents` appears and phase becomes `intent_handler`.
+User messages:
 
-## 7. Deferred evals
+```text
+user id 5673 and pin 1234
+What is the date on the coming Sunday?
+proceed
+```
 
-These still need to be added after the next workflow extension:
+Expected:
 
-- Sequential processing of one saved intent at a time by the Intent Handler
-- Actual processor outputs for currency conversion
-- Actual processor outputs for natural language date and time
-- Call Wrap-up and post-processor follow-up requests
+- Only the date/time agent runs.
+- The answer includes a concrete resolved date.
+
+## 5. Minimum scorecard
+
+- `Authentication works` -> Pass if valid auth leads to `intent_capture`.
+- `Intent capture works` -> Pass if supported intents are extracted and confirmed.
+- `One-intent-at-a-time processing works` -> Pass if each chat turn processes only the next queued intent.
+- `Routing works` -> Pass if currency intents only hit the currency agent and date/time intents only hit the date agent.
+- `Sequence is preserved` -> Pass if multi-intent answers follow saved order.
+- `Failures are graceful` -> Pass if unsupported or broken inputs do not crash the workflow.
+- `Answer state works` -> Pass if each processed intent reaches `Answer Intent State`, the final text is returned by `Finalize Intent Batch`, and the session moves to `call_wrapup` only when no intents remain.
+- `Call wrap-up works` -> Pass if the assistant asks whether the user needs anything else, captures new valid requests on yes, and ends cleanly on no.
+
+## 6. Still deferred
+
+- Production hardening around real auth/backends
+- Additional processor types beyond currency and date/time
